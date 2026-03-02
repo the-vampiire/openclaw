@@ -658,11 +658,29 @@ final class GatewayConnectionController {
 
     private func buildGatewayURL(host: String, port: Int, useTLS: Bool) -> URL? {
         let scheme = useTLS ? "wss" : "ws"
+        // Support host values that include a path (e.g. "myhost.ts.net/agent").
+        let (pureHost, path) = Self.splitHostPath(host)
         var components = URLComponents()
         components.scheme = scheme
-        components.host = host
+        components.host = pureHost
         components.port = port
+        if !path.isEmpty {
+            components.path = path
+        }
         return components.url
+    }
+
+    /// Split a raw host string into hostname and optional path.
+    /// Example: "myhost.ts.net/agent" -> ("myhost.ts.net", "/agent")
+    /// Example: "myhost.ts.net" -> ("myhost.ts.net", "")
+    private static func splitHostPath(_ raw: String) -> (host: String, path: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let slashIndex = trimmed.firstIndex(of: "/") else {
+            return (host: trimmed, path: "")
+        }
+        let host = String(trimmed[..<slashIndex])
+        let path = String(trimmed[slashIndex...])
+        return (host: host, path: path)
     }
 
     private func resolveManualUseTLS(host: String, useTLS: Bool) -> Bool {
@@ -674,13 +692,14 @@ final class GatewayConnectionController {
     }
 
     private func shouldForceTLS(host: String) -> Bool {
-        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let pureHost = Self.splitHostPath(host).host
+        let trimmed = pureHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if trimmed.isEmpty { return false }
         return trimmed.hasSuffix(".ts.net") || trimmed.hasSuffix(".ts.net.")
     }
 
     private static func isLoopbackHost(_ rawHost: String) -> Bool {
-        var host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var host = splitHostPath(rawHost).host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !host.isEmpty else { return false }
 
         if host.hasPrefix("[") && host.hasSuffix("]") {
